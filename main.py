@@ -20,7 +20,6 @@ if not TOKEN:
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
 
-# Поддерживаемые валюты для выбора
 CURRENCIES = {
     'RUB': '₽ (Российский рубль)',
     'USD': '$ (Доллар США)',
@@ -57,7 +56,6 @@ def init_db():
         )
     """)
     
-    # ИЗМЕНЕНИЕ: Добавлено поле currency
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS games (
             id INTEGER PRIMARY KEY,
@@ -150,7 +148,6 @@ def get_user_name(tg_id):
     return f"Неизвестный пользователь ID:{tg_id}"
 
 def get_game_info(game_id):
-    # ИЗМЕНЕНИЕ: Добавлено поле currency в SELECT
     return db_execute("SELECT id, name, budget, organizer_id, participants_json, status, invite_code, currency FROM games WHERE id = ?", (game_id,), fetch_one=True)
 
 def is_admin(tg_id):
@@ -242,7 +239,6 @@ def handle_budget(message):
     context['budget'] = budget
     user_states[tg_id] = ('waiting_currency', context)
     
-    # НОВЫЙ ШАГ: Выбор валюты
     prompt_currency_select(tg_id, budget)
 
 def prompt_currency_select(tg_id, budget):
@@ -291,7 +287,6 @@ def handle_currency_select_callback(call):
     )
     organizer_panel(tg_id, game_id)
     
-    # Завершаем обработку колбэка
     bot.answer_callback_query(call.id)
 
 
@@ -305,7 +300,6 @@ def organizer_panel(tg_id, game_id, message_id=None):
         bot.send_message(tg_id, "У вас нет прав на управление этой игрой.")
         return
 
-    # ИЗМЕНЕНИЕ: Распаковка нового поля currency
     game_name, budget, organizer_id, participants_json, status, invite_code, currency = game[1], game[2], game[3], game[4], game[5], game[6], game[7]
     participants = json.loads(participants_json)
     
@@ -314,7 +308,7 @@ def organizer_panel(tg_id, game_id, message_id=None):
     
     text = (
         f"👑 <b>Панель Организатора: {game_name}</b>\n\n"
-        f"<i>Бюджет:</i> <b>{budget} {currency}</b>\n" # ИЗМЕНЕНИЕ: Отображение валюты
+        f"<i>Бюджет:</i> <b>{budget} {currency}</b>\n"
         f"<i>Участников:</i> <b>{len(participants)}</b>\n"
         f"<i>Статус:</i> <b>{status}</b>\n\n"
         f"<b>Участники:</b>\n"
@@ -342,6 +336,63 @@ def organizer_panel(tg_id, game_id, message_id=None):
     else:
         bot.send_message(tg_id, text, reply_markup=markup, parse_mode='HTML')
 
+def participant_game_view(call, game_id):
+    tg_id = call.from_user.id
+    game = get_game_info(game_id)
+    
+    if not game:
+        bot.answer_callback_query(call.id, "Игра не найдена.", show_alert=True)
+        return
+
+    game_name, budget, organizer_id, participants_json, status, invite_code, currency = game[1], game[2], game[3], game[4], game[5], game[6], game[7]
+    participants = json.loads(participants_json)
+    
+    if tg_id not in participants:
+        bot.answer_callback_query(call.id, "Вы не являетесь участником этой игры.", show_alert=True)
+        return
+        
+    organizer_name = get_user_name(organizer_id)
+    text = f"🎁 <b>Информация об игре: {game_name}</b>\n\n"
+    text += f"<i>Организатор:</i> {organizer_name}\n"
+    text += f"<i>Бюджет:</i> <b>{budget} {currency}</b>\n"
+    text += f"<i>Статус:</i> <b>{status}</b>\n"
+    
+    markup = types.InlineKeyboardMarkup()
+    
+    if status == 'running':
+        pair = db_execute("SELECT recipient_tg_id FROM pairs WHERE santa_tg_id = ? AND game_id = ?", (tg_id, game_id), fetch_one=True)
+        
+        if pair:
+            recipient_id = pair[0]
+            recipient_name = get_user_name(recipient_id)
+            
+            recipient_wishes = db_execute(
+                "SELECT text FROM wishes WHERE user_tg_id = ? AND game_id = ?", 
+                (recipient_id, game_id), 
+                fetch_one=True
+            )
+            wish_text = recipient_wishes[0] if recipient_wishes else "Пожелания пока не указаны."
+
+            text += "\n--- 🎅 ---\n"
+            text += f"Ваш Тайный Подопечный: <b>{recipient_name}</b>\n\n"
+            text += f"🎁 <b>Пожелания:</b>\n"
+            text += f"<i>{wish_text}</i>"
+        else:
+             text += "\n--- ⏳ ---\n"
+             text += "Жеребьёвка проведена, но ваша пара не найдена (обратитесь к организатору)."
+    elif status == 'setup':
+        text += "\n--- ⏳ ---\n"
+        text += "Жеребьёвка еще не проводилась."
+    elif status == 'finished':
+        text += "\n--- ✅ ---\n"
+        text += "Игра завершена."
+        
+    markup.add(types.InlineKeyboardButton("✏️ Мои пожелания", callback_data=f'wish_game_{game_id}'))
+    markup.add(types.InlineKeyboardButton("⬅️ Назад в Мои игры", callback_data='my_games'))
+    
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='HTML')
+
+
 def join_game_prompt(message, game_id):
     tg_id = message.chat.id
     game = get_game_info(game_id)
@@ -350,7 +401,6 @@ def join_game_prompt(message, game_id):
         bot.send_message(tg_id, "Игра не найдена. Возможно, она была удалена.")
         return
         
-    # ИЗМЕНЕНИЕ: Распаковка нового поля currency
     game_name, budget, organizer_id, participants_json, status, invite_code, currency = game[1], game[2], game[3], game[4], game[5], game[6], game[7]
     organizer_name = get_user_name(organizer_id)
     participants = json.loads(participants_json)
@@ -362,7 +412,7 @@ def join_game_prompt(message, game_id):
     text = (
         f"Вас пригласили в игру Тайного Санты <b>'{game_name}'</b>!\n\n"
         f"<i>Организатор:</i> {organizer_name}\n"
-        f"<i>Максимальный бюджет:</i> <b>{budget} {currency}</b>\n" # ИЗМЕНЕНИЕ: Отображение валюты
+        f"<i>Максимальный бюджет:</i> <b>{budget} {currency}</b>\n"
         f"<i>Участников сейчас:</i> {len(participants)}"
     )
 
@@ -412,7 +462,6 @@ def draw_pairs(game_id, tg_id):
     if not game or game[3] != tg_id:
         return "Ошибка: Игра не найдена или вы не организатор.", False
     
-    # ИЗМЕНЕНИЕ: Распаковка нового поля currency
     game_name, organizer_id, participants_json, status, invite_code, currency = game[1], game[3], game[4], game[5], game[6], game[7]
     all_participants = json.loads(participants_json)
     
@@ -486,7 +535,7 @@ def draw_pairs(game_id, tg_id):
                 f"Ваш Тайный Подопечный: <b>{recipient_name}</b>\n\n"
                 f"🎁 <b>Пожелания для подарка:</b>\n"
                 f"<i>{wish_text}</i>\n\n"
-                f"💰 <i>Максимальный бюджет: {game[2]} {currency}</i>" # ИЗМЕНЕНИЕ: Отображение валюты
+                f"💰 <i>Максимальный бюджет: {game[2]} {currency}</i>"
             )
             
             try:
@@ -524,7 +573,7 @@ def callback_inline(call):
     elif data.startswith('join_'):
         game_id = int(data.split('_')[1])
         join_game_action(call, game_id)
-    elif data.startswith('select_currency_'): # ОБРАБОТКА КОЛБЭКА ВАЛЮТЫ
+    elif data.startswith('select_currency_'):
         handle_currency_select_callback(call)
     elif data.startswith('org_panel_'):
         game_id = int(data.split('_')[2])
@@ -533,6 +582,11 @@ def callback_inline(call):
             organizer_panel(tg_id, game_id, message_id)
         else:
             bot.answer_callback_query(call.id, "У вас нет прав на управление этой игрой.")
+    # НОВАЯ ОБРАБОТКА ДЛЯ УЧАСТНИКА
+    elif data.startswith('view_game_'):
+        game_id = int(data.split('_')[2])
+        participant_game_view(call, game_id)
+    # КОНЕЦ НОВОЙ ОБРАБОТКИ
     elif data.startswith('draw_'):
         game_id = int(data.split('_')[-1])
         game = get_game_info(game_id)
@@ -583,7 +637,6 @@ def my_games_panel(call):
     message_id = call.message.message_id
     
     org_games = db_execute("SELECT id, name, status FROM games WHERE organizer_id = ?", (tg_id,), fetch_all=True)
-    # ИЗМЕНЕНИЕ: Добавлено поле currency в SELECT
     all_games = db_execute("SELECT id, name, participants_json, organizer_id, status, currency FROM games", fetch_all=True)
     
     participant_games = []
@@ -914,7 +967,6 @@ def handle_admin_edit_input(message):
             parse_mode='HTML'
         )
         
-        # Создание фиктивного объекта Message для повторного вызова панели
         mock_message = types.Message(
             message_id=context['message_to_edit_id'], 
             chat=message.chat, 
@@ -1111,4 +1163,3 @@ if __name__ == '__main__':
         bot.polling(none_stop=True)
     except Exception as e:
         print(f"Ошибка бота: {e}")
-        
