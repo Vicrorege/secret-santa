@@ -57,7 +57,11 @@ def handle_admin_action(message):
     parts = message.text.split(maxsplit=2)
     
     if len(parts) < 3:
-        bot.send_message(tg_id, "Использование: /admin_action <действие> <id>\nПример: `/admin_action draw 2`", parse_mode='Markdown')
+        bot.send_message(
+            tg_id, 
+            "Использование: /admin_action <действие> <id>\nПример: `/admin_action draw 2`", 
+            parse_mode='Markdown' # <--- ИСПРАВЛЕНИЕ
+        )
         return
 
     action = parts[1].lower()
@@ -74,7 +78,6 @@ def handle_admin_action(message):
         bot.send_message(tg_id, result_message, parse_mode='Markdown')
         
         if success:
-            # Отправляем новую панель организатора, не редактируя старое сообщение
             gp.organizer_panel(bot, tg_id, game_id, message_id=None) 
             
     elif action == 'finish':
