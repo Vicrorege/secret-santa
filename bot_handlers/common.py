@@ -31,7 +31,9 @@ def get_user_name(tg_id):
 def get_user_link(tg_id):
     user = get_user_info(tg_id)
     if user:
-        name = user[3] or user[2] or f"ID: {user[1]}"
+        fulname = user[3]
+        fulname += user[4] if user[4] is not None else ""
+        name = fulname or f"ID: {user[1]}"
         return f'<a href="tg://user?id={tg_id}">{name}</a>'
     return f"Неизвестный пользователь ID:{tg_id}"
 
