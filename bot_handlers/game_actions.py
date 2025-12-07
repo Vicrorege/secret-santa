@@ -2,9 +2,9 @@ import json
 import random
 import sqlite3
 from telebot import types
-from db_manager import db_execute, get_game_info
+from db_manager import db_execute, get_game_info, is_admin # <-- Добавлен is_admin
 from bot_handlers.common import get_user_link, get_user_name, main_menu_markup
-from bot_handlers.game_panels import organizer_panel # Импорт панели организатора
+from bot_handlers.game_panels import organizer_panel 
 
 def join_game_prompt(bot, message, game_id):
     tg_id = message.chat.id
@@ -70,11 +70,11 @@ def join_game_action(bot, call, game_id):
         bot.answer_callback_query(call.id, "Вы уже в этой игре.")
 
 def draw_pairs(bot, game_id, tg_id):
-    # organizer_panel импортирован выше
     game = get_game_info(game_id)
     
-    if not game or game[3] != tg_id:
-        return "Ошибка: Игра не найдена или вы не организатор.", False
+    # *** ИЗМЕНЕНИЕ: Проверка на Администратора, если tg_id не является Организатором ***
+    if not game or (game[3] != tg_id and not is_admin(tg_id)):
+        return "Ошибка: Игра не найдена или у вас нет прав организатора/администратора.", False
     
     game_name, budget, organizer_id, participants_json, status, invite_code, currency = game[1], game[2], game[3], game[4], game[5], game[6], game[7]
     all_participants = json.loads(game[4])
@@ -167,11 +167,10 @@ def draw_pairs(bot, game_id, tg_id):
         return f"Неизвестная ошибка при жеребьёвке: {str(e)}", False
 
 def finish_game_action(bot, call, game_id):
-    # organizer_panel импортирован выше
     tg_id = call.from_user.id
     game = get_game_info(game_id)
     
-    if not game or game[3] != tg_id:
+    if not game or (game[3] != tg_id and not is_admin(tg_id)):
         bot.answer_callback_query(call.id, "У вас нет прав.")
         return
         
@@ -179,11 +178,18 @@ def finish_game_action(bot, call, game_id):
     bot.answer_callback_query(call.id, f"Игра '{game[1]}' завершена!")
     organizer_panel(bot, tg_id, game_id, call.message.message_id)
 
+# *** НОВАЯ ФУНКЦИЯ для команды /admin_action finish ***
+def finish_game_action_admin(bot, game_id, tg_id):
+    game = get_game_info(game_id)
+    if not game or not is_admin(tg_id):
+        return
+        
+    db_execute("UPDATE games SET status = 'finished' WHERE id = ?", (game_id,), commit=True)
+
 def delete_game_confirm(bot, call, game_id):
-    # organizer_panel импортирован выше
     game = get_game_info(game_id)
     
-    if not game or game[3] != call.from_user.id:
+    if not game or (game[3] != call.from_user.id and not is_admin(call.from_user.id)):
         bot.answer_callback_query(call.id, "У вас нет прав.")
         return
         
@@ -198,7 +204,7 @@ def delete_game_action(bot, call, game_id):
     tg_id = call.from_user.id
     game = get_game_info(game_id)
     
-    if not game or game[3] != tg_id:
+    if not game or (game[3] != tg_id and not is_admin(tg_id)):
         bot.answer_callback_query(call.id, "У вас нет прав.")
         return
         

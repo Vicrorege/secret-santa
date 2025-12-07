@@ -29,7 +29,7 @@ def handle_start(message):
     
     if payload:
         invite_code = payload 
-        game_id = get_game_id_by_code(invite_code) # Импорт из db_manager теперь корректен
+        game_id = get_game_id_by_code(invite_code)
         if game_id:
             ga.join_game_prompt(bot, message, game_id)
             return
@@ -47,41 +47,46 @@ def handle_admin(message):
     else:
         bot.send_message(message.chat.id, "У вас нет прав администратора.")
 
-@bot.message_handler(commands=['trigger'])
-def handle_trigger(message):
-    if not is_admin(message.from_user.id):
-        bot.send_message(message.chat.id, "У вас нет прав администратора для этой команды.")
+@bot.message_handler(commands=['admin_action', 'trigger'])
+def handle_admin_action(message):
+    tg_id = message.from_user.id
+    if not is_admin(tg_id):
+        bot.send_message(tg_id, "У вас нет прав администратора.")
         return
         
-    try:
-        parts = message.text.split(maxsplit=1)
-        if len(parts) < 2:
-            bot.send_message(message.chat.id, "Использование: /trigger <callback_data>")
-            return
-            
-        callback_data = parts[1].strip()
-        
-        mock_call = types.CallbackQuery(
-            id='admin_trigger', 
-            from_user=message.from_user, 
-            data=callback_data, 
-            chat_instance='mock_chat_instance', 
-            message=message, 
-            json_string='{}'
-        )
-        
-        callback_inline(mock_call)
-        
-        bot.delete_message(message.chat.id, message.message_id)
-        
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Ошибка при имитации нажатия: {e}")
+    parts = message.text.split(maxsplit=2)
+    
+    if len(parts) < 3:
+        bot.send_message(tg_id, "Использование: /admin_action <действие> <id>\nПример: `/admin_action draw 2`", parse_mode='Markdown')
+        return
 
-@bot.message_handler(commands=['cancel'])
-def handle_cancel(message):
-    if message.chat.id in user_states:
-        del user_states[message.chat.id]
-        bot.send_message(message.chat.id, "Действие отменено.", reply_markup=common.main_menu_markup())
+    action = parts[1].lower()
+    game_id_str = parts[2]
+    
+    try:
+        game_id = int(game_id_str)
+    except ValueError:
+        bot.send_message(tg_id, "Неверный ID игры.")
+        return
+
+    if action == 'draw':
+        result_message, success = ga.draw_pairs(bot, game_id, tg_id)
+        bot.send_message(tg_id, result_message, parse_mode='Markdown')
+        
+        if success:
+            # Отправляем новую панель организатора, не редактируя старое сообщение
+            gp.organizer_panel(bot, tg_id, game_id, message_id=None) 
+            
+    elif action == 'finish':
+        game = get_game_info(game_id)
+        if game:
+            ga.finish_game_action_admin(bot, game_id, tg_id)
+            bot.send_message(tg_id, f"Игра '{game[1]}' завершена.")
+        else:
+            bot.send_message(tg_id, "Игра не найдена.")
+            
+    else:
+        bot.send_message(tg_id, f"Неизвестное действие: {action}")
 
 @bot.message_handler(commands=['update_users'])
 def handle_update_users(message):
@@ -90,6 +95,12 @@ def handle_update_users(message):
         bot.send_message(message.chat.id, result_text, parse_mode='Markdown')
     else:
         bot.send_message(message.chat.id, "У вас нет прав администратора.")
+
+@bot.message_handler(commands=['cancel'])
+def handle_cancel(message):
+    if message.chat.id in user_states:
+        del user_states[message.chat.id]
+        bot.send_message(message.chat.id, "Действие отменено.", reply_markup=common.main_menu_markup())
 
 # --- MESSAGE HANDLERS (for states) ---
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) and user_states[message.chat.id][0] == 'waiting_game_name')
@@ -138,7 +149,7 @@ def callback_inline(call):
     elif data.startswith('org_panel_'):
         game_id = int(data.split('_')[2])
         game = get_game_info(game_id)
-        if game and game[3] == tg_id:
+        if game and (game[3] == tg_id or is_admin(tg_id)):
             gp.organizer_panel(bot, tg_id, game_id, call.message.message_id)
         else:
             bot.answer_callback_query(call.id, "У вас нет прав на управление этой игрой.")
@@ -148,36 +159,36 @@ def callback_inline(call):
     elif data.startswith('draw_'):
         game_id = int(data.split('_')[-1])
         game = get_game_info(game_id)
-        if game and game[3] == tg_id:
+        if game and (game[3] == tg_id or is_admin(tg_id)):
             result_message, success = ga.draw_pairs(bot, game_id, tg_id)
             bot.answer_callback_query(call.id, result_message)
             gp.organizer_panel(bot, tg_id, game_id, call.message.message_id)
         else:
-            bot.answer_callback_query(call.id, "У вас нет прав организатора.")
+            bot.answer_callback_query(call.id, "У вас нет прав организатора/администратора.")
     elif data.startswith('wish_game_'):
         game_id = int(data.split('_')[2])
         ga.prompt_wish_text(bot, call, game_id, user_states)
     elif data.startswith('delete_game_'):
         game_id = int(data.split('_')[2])
         game = get_game_info(game_id)
-        if game and game[3] == tg_id:
+        if game and (game[3] == tg_id or is_admin(tg_id)):
             ga.delete_game_confirm(bot, call, game_id)
         else:
-            bot.answer_callback_query(call.id, "У вас нет прав организатора.")
+            bot.answer_callback_query(call.id, "У вас нет прав организатора/администратора.")
     elif data.startswith('confirm_delete_'):
         game_id = int(data.split('_')[2])
         game = get_game_info(game_id)
-        if game and game[3] == tg_id:
+        if game and (game[3] == tg_id or is_admin(tg_id)):
             ga.delete_game_action(bot, call, game_id)
         else:
-            bot.answer_callback_query(call.id, "У вас нет прав организатора.")
+            bot.answer_callback_query(call.id, "У вас нет прав организатора/администратора.")
     elif data.startswith('finish_game_'):
         game_id = int(data.split('_')[2])
         game = get_game_info(game_id)
-        if game and game[3] == tg_id:
+        if game and (game[3] == tg_id or is_admin(tg_id)):
             ga.finish_game_action(bot, call, game_id)
         else:
-            bot.answer_callback_query(call.id, "У вас нет прав организатора.")
+            bot.answer_callback_query(call.id, "У вас нет прав организатора/администратора.")
     else:
         bot.answer_callback_query(call.id, "Действие не распознано.")
 
