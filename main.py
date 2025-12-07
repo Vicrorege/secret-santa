@@ -83,6 +83,14 @@ def handle_cancel(message):
         del user_states[message.chat.id]
         bot.send_message(message.chat.id, "Действие отменено.", reply_markup=common.main_menu_markup())
 
+@bot.message_handler(commands=['update_users'])
+def handle_update_users(message):
+    if is_admin(message.from_user.id):
+        result_text, success = ap.admin_update_all_users_data(bot, message)
+        bot.send_message(message.chat.id, result_text, parse_mode='Markdown')
+    else:
+        bot.send_message(message.chat.id, "У вас нет прав администратора.")
+
 # --- MESSAGE HANDLERS (for states) ---
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) and user_states[message.chat.id][0] == 'waiting_game_name')
 def handle_game_name(message):

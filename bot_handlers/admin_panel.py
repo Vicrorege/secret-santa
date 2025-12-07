@@ -388,3 +388,76 @@ def callback_admin_panel(bot, call, user_states):
         admin_edit_record_view(bot, call, table_name, record_id)
     else:
         bot.answer_callback_query(call.id, f"Действие '{data}' пока не реализовано.")
+
+def admin_update_all_users_data(bot, message):
+    if not is_admin(message.from_user.id):
+        return "❌ У вас нет прав администратора.", False
+
+    # Получаем все tg_id из базы данных
+    all_user_ids = db_execute("SELECT tg_id FROM users", fetch_all=True)
+    
+    if not all_user_ids:
+        return "⚠️ В базе данных нет пользователей для обновления.", False
+
+    updated_count = 0
+    
+    # Отправляем сообщение, чтобы избежать таймаута при длительной операции
+    status_msg = bot.send_message(message.chat.id, "🔄 **Начинаю обновление данных всех пользователей...**", parse_mode='Markdown')
+
+    for user_id_tuple in all_user_ids:
+        tg_id = user_id_tuple[0]
+        try:
+            # Получаем актуальную информацию из Telegram API
+            member = bot.get_chat_member(tg_id, tg_id)
+            user = member.user
+            
+            # Подготовка данных
+            username = user.username
+            first_name = user.first_name
+            last_name = user.last_name
+            
+            # Обновление записи в БД
+            db_execute(
+                "UPDATE users SET username = ?, first_name = ?, last_name = ? WHERE tg_id = ?",
+                (username, first_name, last_name, tg_id),
+                commit=True
+            )
+            updated_count += 1
+            
+        except telebot.apihelper.ApiTelegramException as e:
+            # Обработка случаев, когда бот не может получить информацию
+            # Например, если пользователь заблокировал бота, tg_id становится недоступным
+            if 'user not found' in str(e) or 'is not a member' in str(e):
+                # Можно добавить логику для пометки или удаления "мертвых" аккаунтов
+                pass
+            else:
+                pass 
+        except Exception:
+            pass
+            
+    bot.delete_message(message.chat.id, status_msg.message_id)
+
+    return f"✅ **Успешно обновлено {updated_count}** из {len(all_user_ids)} записей пользователей.", True
+
+# Добавьте эту функцию в callback_admin_panel, чтобы можно было вызывать ее из меню
+def admin_prompt_update_all_users(bot, call):
+    text = "⚠️ **Вы уверены, что хотите обновить данные всех пользователей?** Это может занять некоторое время."
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("✅ ДА, обновить сейчас", callback_data='admin_execute_update_users'))
+    markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data='admin_menu'))
+
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='Markdown')
+
+def admin_execute_update_users_action(bot, call):
+    tg_id = call.from_user.id
+    bot.answer_callback_query(call.id, "Начинаю обновление...", show_alert=False)
+    
+    result_text, success = admin_update_all_users_data(bot, call.message)
+    
+    bot.edit_message_text(
+        result_text, 
+        tg_id, 
+        call.message.message_id,
+        reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("⬅️ Назад", callback_data='admin_menu')),
+        parse_mode='Markdown'
+    )
