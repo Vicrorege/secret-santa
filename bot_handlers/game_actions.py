@@ -262,3 +262,19 @@ def handle_wish_text(bot, message, user_states):
         parse_mode='HTML', 
         reply_markup=main_menu_markup()
     )
+
+def delete_game_action_admin(bot, game_id, tg_id):
+    game = get_game_info(game_id)
+    
+    if not game or not is_admin(tg_id):
+        # Эта ошибка будет обработана в main.py
+        return "У вас нет прав администратора или игра не найдена.", False
+
+    game_name = game[1]
+
+    # Удаление всех связанных данных: пары, пожелания, сама игра
+    db_execute("DELETE FROM pairs WHERE game_id = ?", (game_id,), commit=True)
+    db_execute("DELETE FROM wishes WHERE game_id = ?", (game_id,), commit=True)
+    db_execute("DELETE FROM games WHERE id = ?", (game_id,), commit=True)
+    
+    return f"🗑️ Игра <b>'{game_name}'</b> (ID: {game_id}) и все связанные данные удалены.", True

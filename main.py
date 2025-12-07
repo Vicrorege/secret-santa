@@ -60,7 +60,7 @@ def handle_admin_action(message):
         bot.send_message(
             tg_id, 
             "Использование: /admin_action <действие> <id>\nПример: `/admin_action draw 2`", 
-            parse_mode='Markdown' # <--- ИСПРАВЛЕНИЕ
+            parse_mode='Markdown'
         )
         return
 
@@ -87,6 +87,10 @@ def handle_admin_action(message):
             bot.send_message(tg_id, f"Игра '{game[1]}' завершена.")
         else:
             bot.send_message(tg_id, "Игра не найдена.")
+            
+    elif action == 'delete': # <--- ДОБАВЛЕНО НОВОЕ ДЕЙСТВИЕ
+        result_message, success = ga.delete_game_action_admin(bot, game_id, tg_id)
+        bot.send_message(tg_id, result_message, parse_mode='HTML')
             
     else:
         bot.send_message(tg_id, f"Неизвестное действие: {action}")
