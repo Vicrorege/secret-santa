@@ -1,11 +1,11 @@
 import json
 from telebot import types
-from db_manager import db_execute, get_game_info
-from bot_handlers.common import CURRENCIES, generate_invite_code
+from db_manager import db_execute, get_game_info, is_fantom
+from bot_handlers.common import CURRENCIES, generate_invite_code, send
 from bot_handlers.game_panels import organizer_panel # Импорт панели организатора
 
 def create_game_start(bot, message, user_states):
-    bot.send_message(message.chat.id, "Введите название для новой игры (например, 'Новогодний обмен 2025'):")
+    send(bot, message.chat.id, "Введите название для новой игры (например, 'Новогодний обмен 2025'):")
     user_states[message.chat.id] = ('waiting_game_name', {})
 
 def handle_game_name(bot, message, user_states):
@@ -13,11 +13,11 @@ def handle_game_name(bot, message, user_states):
     tg_id = message.chat.id
     
     if db_execute("SELECT id FROM games WHERE name = ?", (game_name,), fetch_one=True):
-        bot.send_message(tg_id, "Игра с таким названием уже существует. Придумайте другое:")
+        send(bot, tg_id, "Игра с таким названием уже существует. Придумайте другое:")
         return
 
     user_states[tg_id] = ('waiting_budget', {'name': game_name})
-    bot.send_message(tg_id, f"Название '{game_name}' принято. Теперь введите максимальный бюджет на подарок (например, 1500.00):")
+    send(bot, tg_id, f"Название '{game_name}' принято. Теперь введите максимальный бюджет на подарок (например, 1500.00):")
 
 def prompt_currency_select(bot, tg_id, budget):
     text = f"Бюджет **{budget}** принят. Выберите валюту:"
@@ -26,7 +26,7 @@ def prompt_currency_select(bot, tg_id, budget):
     for code, description in CURRENCIES.items():
         markup.add(types.InlineKeyboardButton(description, callback_data=f'select_currency_{code}'))
         
-    bot.send_message(tg_id, text, reply_markup=markup, parse_mode='Markdown')
+    send(bot, tg_id, text, reply_markup=markup, parse_mode='Markdown')
 
 def handle_budget(bot, message, user_states):
     tg_id = message.chat.id
@@ -37,7 +37,7 @@ def handle_budget(bot, message, user_states):
         if budget <= 0:
              raise ValueError
     except ValueError:
-        bot.send_message(tg_id, "Некорректная сумма. Введите положительное число (например, 500.50):")
+        send(bot, tg_id, "Некорректная сумма. Введите положительное число (например, 500.50):")
         return
         
     context['budget'] = budget
@@ -47,6 +47,11 @@ def handle_budget(bot, message, user_states):
 
 def handle_currency_select_callback(bot, call, user_states):
     tg_id = call.from_user.id
+    
+    if is_fantom(tg_id):
+        bot.answer_callback_query(call.id, "❌ Вам запрещено использовать этот бот.", show_alert=True)
+        return
+    
     if tg_id not in user_states or user_states[tg_id][0] != 'waiting_currency':
         bot.answer_callback_query(call.id, "Истекло время ожидания или неверный контекст.")
         return

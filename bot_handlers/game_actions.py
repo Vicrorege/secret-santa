@@ -2,16 +2,16 @@ import json
 import random
 import sqlite3
 from telebot import types
-from db_manager import db_execute, get_game_info, is_admin # <-- Добавлен is_admin
-from bot_handlers.common import get_user_link, get_user_name, main_menu_markup
-from bot_handlers.game_panels import organizer_panel 
+from db_manager import db_execute, get_game_info, is_admin, is_fantom # <-- Добавлен is_fantom
+from bot_handlers.common import get_user_link, get_user_name, main_menu_markup, send
+from bot_handlers.game_panels import organizer_panel
 
 def join_game_prompt(bot, message, game_id):
     tg_id = message.chat.id
     game = get_game_info(game_id)
     
     if not game:
-        bot.send_message(tg_id, "Игра не найдена. Возможно, она была удалена.")
+        send(bot, tg_id, "Игра не найдена. Возможно, она была удалена.")
         return
         
     game_name, budget, organizer_id, participants_json, status, invite_code, currency = game[1], game[2], game[3], game[4], game[5], game[6], game[7]
@@ -19,7 +19,7 @@ def join_game_prompt(bot, message, game_id):
     participants = json.loads(participants_json)
     
     if tg_id in participants:
-        bot.send_message(tg_id, f"Вы уже являетесь участником игры <b>'{game_name}'</b>.", parse_mode='HTML')
+        send(bot, tg_id, f"Вы уже являетесь участником игры <b>'{game_name}'</b>.", parse_mode='HTML')
         return
 
     text = (
@@ -33,7 +33,7 @@ def join_game_prompt(bot, message, game_id):
     markup.add(types.InlineKeyboardButton("✅ Присоединиться", callback_data=f'join_{game_id}'))
     markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data='menu'))
 
-    bot.send_message(tg_id, text, reply_markup=markup, parse_mode='HTML')
+    send(bot, tg_id, text, reply_markup=markup, parse_mode='HTML')
 
 def join_game_action(bot, call, game_id):
     tg_id = call.from_user.id
@@ -65,7 +65,7 @@ def join_game_action(bot, call, game_id):
             reply_markup=main_menu_markup()
         )
         organizer_id = game[3]
-        bot.send_message(organizer_id, f"🔔 {get_user_name(tg_id)} присоединился(ась) к игре <b>'{game_name}'</b>.", parse_mode='HTML')
+        send(bot, organizer_id, f"🔔 {get_user_name(tg_id)} присоединился(ась) к игре <b>'{game_name}'</b>.", parse_mode='HTML')
     else:
         bot.answer_callback_query(call.id, "Вы уже в этой игре.")
 
@@ -153,7 +153,7 @@ def draw_pairs(bot, game_id, tg_id):
             )
             
             try:
-                bot.send_message(santa, message_text, parse_mode='HTML')
+                send(bot, santa, message_text, parse_mode='HTML')
                 successful_sends.append(santa)
             except Exception as e:
                 failed_sends.append((santa, e))
@@ -216,6 +216,11 @@ def delete_game_action(bot, call, game_id):
 
 def prompt_wish_text(bot, call, game_id, user_states):
     tg_id = call.from_user.id
+    
+    if is_fantom(tg_id):
+        bot.answer_callback_query(call.id, "❌ Вам запрещено использовать этот бот.", show_alert=True)
+        return
+    
     game = get_game_info(game_id)
     
     participants = json.loads(game[4]) if game else []
@@ -243,6 +248,11 @@ def prompt_wish_text(bot, call, game_id, user_states):
     
 def handle_wish_text(bot, message, user_states):
     tg_id = message.chat.id
+    
+    if is_fantom(tg_id):
+        send(bot, tg_id, "❌ Вам запрещено использовать этот бот.")
+        return
+    
     context = user_states[tg_id][1]
     game_id = context['game_id']
     wish_text = message.text.strip()
@@ -256,8 +266,8 @@ def handle_wish_text(bot, message, user_states):
     del user_states[tg_id]
     
     game = get_game_info(game_id)
-    bot.send_message(
-        tg_id, 
+    send(
+        bot, tg_id, 
         f"✅ Ваши пожелания для игры <b>'{game[1]}'</b> сохранены.", 
         parse_mode='HTML', 
         reply_markup=main_menu_markup()

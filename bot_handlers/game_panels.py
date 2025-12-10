@@ -1,7 +1,7 @@
 import json
 from telebot import types
-from db_manager import db_execute, get_game_info
-from bot_handlers.common import get_user_link, main_menu_markup
+from db_manager import db_execute, get_game_info, is_fantom
+from bot_handlers.common import get_user_link, main_menu_markup, send
 
 # Функция для вызова из других модулей, чтобы избежать циклической зависимости
 def organizer_panel(bot, tg_id, game_id, message_id=None):
@@ -10,11 +10,11 @@ def organizer_panel(bot, tg_id, game_id, message_id=None):
         if message_id:
              bot.edit_message_text("Ошибка: Игра не найдена.", tg_id, message_id)
         else:
-             bot.send_message(tg_id, "Ошибка: Игра не найдена.")
+             send(bot, tg_id, "Ошибка: Игра не найдена.")
         return
         
     if game[3] != tg_id:
-        bot.send_message(tg_id, "У вас нет прав на управление этой игрой.")
+        send(bot, tg_id, "У вас нет прав на управление этой игрой.")
         return
 
     game_name, budget, organizer_id, participants_json, status, invite_code, currency = game[1], game[2], game[3], game[4], game[5], game[6], game[7]
@@ -69,7 +69,7 @@ def organizer_panel(bot, tg_id, game_id, message_id=None):
             if 'message is not modified' not in str(e):
                 raise e
     else:
-        bot.send_message(tg_id, text, reply_markup=markup, parse_mode='HTML')
+        send(bot, tg_id, text, reply_markup=markup, parse_mode='HTML')
 
 def participant_game_view(bot, call, game_id):
     tg_id = call.from_user.id
@@ -128,7 +128,7 @@ def participant_game_view(bot, call, game_id):
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='HTML')
 
 def my_games_panel(bot, call):
-    tg_id = call.from_user.id
+    tg_id = call.from_user.id 
     message_id = call.message.message_id
     
     org_games = db_execute("SELECT id, name, status FROM games WHERE organizer_id = ?", (tg_id,), fetch_all=True)

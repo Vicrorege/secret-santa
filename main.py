@@ -2,8 +2,9 @@ import telebot
 from telebot import types
 from dotenv import load_dotenv
 import os
-from db_manager import init_db, get_game_id_by_code, is_admin, get_game_info
+from db_manager import init_db, get_game_id_by_code, is_admin, get_game_info, is_fantom, User
 import bot_handlers.common as common
+from bot_handlers.common import send
 import bot_handlers.game_creation as gc
 import bot_handlers.game_panels as gp
 import bot_handlers.game_actions as ga
@@ -31,34 +32,167 @@ def handle_start(message):
         invite_code = payload 
         game_id = get_game_id_by_code(invite_code)
         if game_id:
-            ga.join_game_prompt(bot, message, game_id)
+            # Если мы в sudo контексте, добавляем пользователя напрямую без подтверждения
+            if common.SUDO_CONTEXT:
+                import json
+                game = get_game_info(game_id)
+                if game:
+                    participants_json = game[4]
+                    participants = json.loads(participants_json)
+                    tg_id = message.from_user.id
+                    
+                    if tg_id not in participants:
+                        participants.append(tg_id)
+                        new_participants_json = json.dumps(participants)
+                        from db_manager import db_execute
+                        db_execute(
+                            "UPDATE games SET participants_json = ? WHERE id = ?",
+                            (new_participants_json, game_id),
+                            commit=True
+                        )
+                        send(bot, common.SUDO_CONTEXT['admin'], f"✅ Пользователь {tg_id} добавлен в игру {game[1]}")
+                    else:
+                        send(bot, common.SUDO_CONTEXT['admin'], f"ℹ️ Пользователь {tg_id} уже в игре {game[1]}")
+            else:
+                ga.join_game_prompt(bot, message, game_id)
             return
     
-    bot.send_message(
-        message.chat.id, 
+    send(
+        bot, message.chat.id, 
         "Привет! Я бот для игры в Тайного Санту. Выбери действие:", 
         reply_markup=common.main_menu_markup()
     )
+
+@bot.message_handler(commands=['fantom'])
+def handle_fantom(message):    
+    if is_admin(message.from_user.id):
+        if len(message.text.split(' ')) < 2:
+            send(bot, message.chat.id, "Использование: /fantom <id пользователя>")
+            return
+        User.get_fantom(int(message.text.split(' ')[1]))
+        send(bot, message.chat.id, "Фантом создан.")
+    else:
+        send(bot, message.chat.id, "У вас нет прав администратора.")
+
+
+@bot.message_handler(commands=['sudo'])
+def handle_sudo(message):
+    """Имитация выполнения команды от лица другого пользователя.
+    Формат: /sudo <tg_id> <command...>
+    Только для администраторов бота.
+    """
+    if not is_admin(tg_id):
+        send(bot, tg_id, "У вас нет прав администратора.")
+        return
+    sender_id = message.from_user.id
+    if not is_admin(sender_id):
+        send(bot, message.chat.id, "У вас нет прав администратора.")
+        return
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        send(bot, message.chat.id, "Использование: /sudo <tg_id> <command...>")
+        return
+
+    try:
+        target_id = int(parts[1])
+    except ValueError:
+        send(bot, message.chat.id, "Неверный tg_id. Использование: /sudo <tg_id> <command...>")
+        return
+
+    command_text = parts[2].strip()
+
+    # Простые заглушки, совместимые с обработчиками
+    class _FU:
+        def __init__(self, id):
+            self.id = id
+            self.username = f"user_{id}"
+            self.first_name = f"Sudo User"
+            self.last_name = f"({id})"
+
+    class _FC:
+        def __init__(self, id):
+            self.id = id
+
+    class _FM:
+        def __init__(self, tg_id, text):
+            self.chat = _FC(tg_id)
+            self.from_user = _FU(tg_id)
+            self.text = text
+            self.message_id = 0
+
+    fake_msg = _FM(target_id, command_text)
+
+    cmd = command_text.split()[0].lstrip('/').lower()
+
+    # Установим sudo-контекст, чтобы send() перенаправлял сообщения, адресованные цели, админу
+    common.set_sudo_context(target_id, message.chat.id)
+    try:
+        # Вызов напрямую для известных команд
+        if cmd == 'start':
+            handle_start(fake_msg)
+            send(bot, message.chat.id, f"Выполнено: /start от {target_id}")
+            return
+        if cmd == 'fantom':
+            handle_fantom(fake_msg)
+            send(bot, message.chat.id, f"Выполнено: /fantom от {target_id}")
+            return
+        if cmd == 'admin':
+            handle_admin(fake_msg)
+            send(bot, message.chat.id, f"Выполнено: /admin от {target_id}")
+            return
+        if cmd in ('admin_action', 'trigger'):
+            handle_admin_action(fake_msg)
+            send(bot, message.chat.id, f"Выполнено: /admin_action от {target_id}")
+            return
+        if cmd == 'update_users':
+            handle_update_users(fake_msg)
+            send(bot, message.chat.id, f"Выполнено: /update_users от {target_id}")
+            return
+        if cmd == 'cancel':
+            handle_cancel(fake_msg)
+            send(bot, message.chat.id, f"Выполнено: /cancel от {target_id}")
+            return
+
+        # Попытка передать сообщение в движок telebot
+        try:
+            bot.process_new_messages([fake_msg])
+            send(bot, message.chat.id, f"Попытка обработать сообщение '{command_text}' от {target_id} отправлена в процесс бота.")
+            return
+        except Exception:
+            import traceback
+            tb = traceback.format_exc()
+            send(bot, message.chat.id, f"Не удалось выполнить команду: {tb}")
+            return
+
+    except Exception:
+        import traceback
+        tb = traceback.format_exc()
+        send(bot, message.chat.id, f"Ошибка при выполнении sudo: {tb}")
+        return
+    finally:
+        common.clear_sudo_context()
+
 
 @bot.message_handler(commands=['admin'])
 def handle_admin(message):
     if is_admin(message.from_user.id):
         ap.admin_panel(bot, message)
     else:
-        bot.send_message(message.chat.id, "У вас нет прав администратора.")
+        send(bot, message.chat.id, "У вас нет прав администратора.")
 
 @bot.message_handler(commands=['admin_action', 'trigger'])
 def handle_admin_action(message):
     tg_id = message.from_user.id
     if not is_admin(tg_id):
-        bot.send_message(tg_id, "У вас нет прав администратора.")
+        send(bot, tg_id, "У вас нет прав администратора.")
         return
         
     parts = message.text.split(maxsplit=2)
     
     if len(parts) < 3:
-        bot.send_message(
-            tg_id, 
+        send(
+            bot, tg_id, 
             "Использование: /admin_action <действие> <id>\nПример: `/admin_action draw 2`", 
             parse_mode='Markdown'
         )
@@ -70,12 +204,12 @@ def handle_admin_action(message):
     try:
         game_id = int(game_id_str)
     except ValueError:
-        bot.send_message(tg_id, "Неверный ID игры.")
+        send(bot, tg_id, "Неверный ID игры.")
         return
 
     if action == 'draw':
         result_message, success = ga.draw_pairs(bot, game_id, tg_id)
-        bot.send_message(tg_id, result_message, parse_mode='Markdown')
+        send(bot, tg_id, result_message, parse_mode='Markdown')
         
         if success:
             gp.organizer_panel(bot, tg_id, game_id, message_id=None) 
@@ -84,46 +218,60 @@ def handle_admin_action(message):
         game = get_game_info(game_id)
         if game:
             ga.finish_game_action_admin(bot, game_id, tg_id)
-            bot.send_message(tg_id, f"Игра '{game[1]}' завершена.")
+            send(bot, tg_id, f"Игра '{game[1]}' завершена.")
         else:
-            bot.send_message(tg_id, "Игра не найдена.")
+            send(bot, tg_id, "Игра не найдена.")
             
-    elif action == 'delete': # <--- ДОБАВЛЕНО НОВОЕ ДЕЙСТВИЕ
+    elif action == 'delete':
         result_message, success = ga.delete_game_action_admin(bot, game_id, tg_id)
-        bot.send_message(tg_id, result_message, parse_mode='HTML')
+        send(bot, tg_id, result_message, parse_mode='HTML')
             
     else:
-        bot.send_message(tg_id, f"Неизвестное действие: {action}")
+        send(bot, tg_id, f"Неизвестное действие: {action}")
 
 @bot.message_handler(commands=['update_users'])
 def handle_update_users(message):
+    if common.check_fantom(bot, message.chat.id):
+        return
+    
     if is_admin(message.from_user.id):
         result_text, success = ap.admin_update_all_users_data(bot, message)
-        bot.send_message(message.chat.id, result_text, parse_mode='Markdown')
+        send(bot, message.chat.id, result_text, parse_mode='Markdown')
     else:
-        bot.send_message(message.chat.id, "У вас нет прав администратора.")
+        send(bot, message.chat.id, "У вас нет прав администратора.")
 
 @bot.message_handler(commands=['cancel'])
 def handle_cancel(message):
+    if common.check_fantom(bot, message.chat.id):
+        return
+    
     if message.chat.id in user_states:
         del user_states[message.chat.id]
-        bot.send_message(message.chat.id, "Действие отменено.", reply_markup=common.main_menu_markup())
+        send(bot, message.chat.id, "Действие отменено.", reply_markup=common.main_menu_markup())
 
 # --- MESSAGE HANDLERS (for states) ---
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) and user_states[message.chat.id][0] == 'waiting_game_name')
 def handle_game_name(message):
+    if common.check_fantom(bot, message.chat.id):
+        return
     gc.handle_game_name(bot, message, user_states)
 
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) and user_states[message.chat.id][0] == 'waiting_budget')
 def handle_budget(message):
+    if common.check_fantom(bot, message.chat.id):
+        return
     gc.handle_budget(bot, message, user_states)
 
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) and user_states[message.chat.id][0] == 'waiting_wish_text')
 def handle_wish_text(message):
+    if common.check_fantom(bot, message.chat.id):
+        return
     ga.handle_wish_text(bot, message, user_states)
 
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) and user_states[message.chat.id][0] == 'waiting_admin_edit')
 def handle_admin_edit_input(message):
+    if common.check_fantom(bot, message.chat.id):
+        return
     ap.handle_admin_edit_input(bot, message, user_states)
 
 # --- CALLBACK QUERY HANDLER ---
@@ -131,6 +279,10 @@ def handle_admin_edit_input(message):
 def callback_inline(call):
     data = call.data
     tg_id = call.from_user.id
+    
+    if common.check_fantom(bot, tg_id):
+        bot.answer_callback_query(call.id, "❌ Вам запрещено использовать этот бот.", show_alert=True)
+        return
     
     if data.startswith('admin_'):
         ap.callback_admin_panel(bot, call, user_states)
@@ -204,4 +356,7 @@ if __name__ == '__main__':
     try:
         bot.polling(none_stop=True)
     except Exception as e:
-        pass
+        import traceback, sys
+        traceback.print_exc()
+        # Re-raise to avoid silent failures in environments that rely on exit codes
+        raise

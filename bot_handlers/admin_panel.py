@@ -1,8 +1,8 @@
 import telebot
 from telebot import types
 import json
-from db_manager import db_execute, get_table_data, get_single_record, is_admin, get_game_info
-from bot_handlers.common import get_user_link, get_user_name, escape_html
+from db_manager import db_execute, get_table_data, get_single_record, is_admin, is_fantom, get_game_info
+from bot_handlers.common import get_user_link, get_user_name, escape_html, send
 
 PAGE_SIZE = 10 
 
@@ -15,7 +15,7 @@ def admin_panel(bot, message):
     try:
         bot.edit_message_text("👑 <b>Панель Администратора</b>", message.chat.id, message.message_id, reply_markup=markup, parse_mode='HTML')
     except:
-        bot.send_message(message.chat.id, "👑 <b>Панель Администратора</b>", reply_markup=markup, parse_mode='HTML')
+        send(bot, message.chat.id, "ὅ1 <b>Панель Администратора</b>", reply_markup=markup, parse_mode='HTML')
 
 def get_db_pages_markup(table_name, current_page, total_count):
     markup = types.InlineKeyboardMarkup()
@@ -137,7 +137,7 @@ def admin_edit_record_view(bot, call, table_name, record_id):
             if 'message is not modified' not in str(e):
                 raise e
     else:
-        bot.send_message(call.message.chat.id, text, reply_markup=edit_markup, parse_mode='HTML')
+        send(bot, call.message.chat.id, text, reply_markup=edit_markup, parse_mode='HTML')
 
 
 def admin_prompt_edit_value(bot, call, table_name, record_id, col_name, user_states):
@@ -157,7 +157,7 @@ def admin_prompt_edit_value(bot, call, table_name, record_id, col_name, user_sta
         'message_to_edit_id': call.message.message_id 
     })
     
-    bot.send_message(call.message.chat.id, text, parse_mode='HTML')
+    send(bot, call.message.chat.id, text, parse_mode='HTML')
     bot.answer_callback_query(call.id)
     
 
@@ -184,8 +184,8 @@ def handle_admin_edit_input(bot, message, user_states):
         
         del user_states[tg_id]
         
-        bot.send_message(
-            tg_id, 
+        send(
+            bot, tg_id, 
             f"✅ Поле <b>'{col_name}'</b> в таблице <b>{table_name}</b> (ID: {record_id}) успешно обновлено.", 
             parse_mode='HTML'
         )
@@ -216,8 +216,8 @@ def handle_admin_edit_input(bot, message, user_states):
             admin_edit_record_view(bot, mock_call, table_name, record_id)
             
     except Exception as e:
-        bot.send_message(
-            tg_id, 
+        send(
+            bot, tg_id, 
             f"❌ Ошибка при обновлении поля: {str(e)}", 
             parse_mode='HTML'
         )
@@ -338,6 +338,10 @@ def admin_delete_manual_pairs_action(bot, call, game_id):
     admin_tweak_pairs_show(bot, call, game_id)
 
 def callback_admin_panel(bot, call, user_states):
+    if is_fantom(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Вам запрещено использовать этот бот.", show_alert=True)
+        return
+    
     if not is_admin(call.from_user.id):
         bot.answer_callback_query(call.id, "У вас нет прав администратора.", show_alert=True)
         return
@@ -390,6 +394,9 @@ def callback_admin_panel(bot, call, user_states):
         bot.answer_callback_query(call.id, f"Действие '{data}' пока не реализовано.")
 
 def admin_update_all_users_data(bot, message):
+    if is_fantom(message.from_user.id):
+        return "❌ Вам запрещено использовать этот бот.", False
+    
     if not is_admin(message.from_user.id):
         return "❌ У вас нет прав администратора.", False
 
@@ -402,7 +409,7 @@ def admin_update_all_users_data(bot, message):
     updated_count = 0
     
     # Отправляем сообщение, чтобы избежать таймаута при длительной операции
-    status_msg = bot.send_message(message.chat.id, "🔄 **Начинаю обновление данных всех пользователей...**", parse_mode='Markdown')
+    status_msg = send(bot, message.chat.id, "🔄 **Начинаю обновление данных всех пользователей...**", parse_mode='Markdown')
 
     for user_id_tuple in all_user_ids:
         tg_id = user_id_tuple[0]
