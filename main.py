@@ -81,9 +81,6 @@ def handle_sudo(message):
     Формат: /sudo <tg_id> <command...>
     Только для администраторов бота.
     """
-    if not is_admin(tg_id):
-        send(bot, tg_id, "У вас нет прав администратора.")
-        return
     sender_id = message.from_user.id
     if not is_admin(sender_id):
         send(bot, message.chat.id, "У вас нет прав администратора.")

@@ -128,6 +128,7 @@ def admin_edit_record_view(bot, call, table_name, record_id):
                 )
             )
 
+    edit_markup.add(types.InlineKeyboardButton("🗑️ Удалить запись", callback_data=f'admin_delete_record_{table_name}_{record[0]}'))
     edit_markup.add(types.InlineKeyboardButton("⬅️ Назад к таблице", callback_data=f'admin_db_table_{table_name}_0'))
     
     if call.message and call.message.message_id:
@@ -221,6 +222,43 @@ def handle_admin_edit_input(bot, message, user_states):
             f"❌ Ошибка при обновлении поля: {str(e)}", 
             parse_mode='HTML'
         )
+
+
+def admin_confirm_delete_record(bot, call, table_name, record_id):
+    if not is_admin(call.from_user.id): return
+
+    text = f"⚠️ <b>Подтвердите удаление записи</b>\nТаблица: <b>{table_name}</b>, ID: <b>{record_id}</b>\n\nЭто действие необратимо."
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("✅ Удалить", callback_data=f'admin_execute_delete_record_{table_name}_{record_id}'))
+    markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data=f'admin_edit_record_{table_name}_{record_id}'))
+
+    try:
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='HTML')
+    except telebot.apihelper.ApiTelegramException as e:
+        if 'message is not modified' not in str(e):
+            raise e
+
+
+def admin_execute_delete_record(bot, call, table_name, record_id):
+    if not is_admin(call.from_user.id): return
+
+    # Узнаём имя первичного ключа
+    cols = db_execute(f"PRAGMA table_info({table_name})", fetch_all=True)
+    if not cols:
+        bot.answer_callback_query(call.id, "Не удалось получить информацию о таблице.")
+        admin_view_db_tables(bot, call)
+        return
+
+    pk_name = cols[0][1]
+
+    try:
+        db_execute(f"DELETE FROM {table_name} WHERE {pk_name} = ?", (record_id,), commit=True)
+        bot.answer_callback_query(call.id, f"✅ Запись {record_id} удалена из таблицы {table_name}.")
+        # Показать таблицу заново (страница 0)
+        admin_view_table_data(bot, call, table_name, 0)
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"Ошибка при удалении: {e}")
+        admin_view_table_data(bot, call, table_name, 0)
 
 def get_admin_game_select_markup(callback_prefix):
     games = db_execute("SELECT id, name FROM games WHERE status = 'setup'", fetch_all=True)
