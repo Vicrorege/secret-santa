@@ -159,10 +159,10 @@ def my_games_panel(bot, call):
         for game_id, name in participant_games:
             markup.add(types.InlineKeyboardButton(f"🎁 {name} (Уч.)", callback_data=f'view_game_{game_id}'))
             
-    if wish_games:
-        text += "\n📝 <b>Написать/изменить пожелание:</b>\n"
-        for game_id, name in wish_games:
-            markup.add(types.InlineKeyboardButton(f"✏️ {name}", callback_data=f'wish_game_{game_id}'))
+    # if wish_games:
+    #     text += "\n📝 <b>Написать/изменить пожелание:</b>\n"
+    #     for game_id, name in wish_games:
+    #         markup.add(types.InlineKeyboardButton(f"✏️ {name}", callback_data=f'wish_game_{game_id}'))
             
     if not org_games and not participant_games and not wish_games:
         text += "\nУ вас пока нет активных игр."
