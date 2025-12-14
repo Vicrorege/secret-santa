@@ -241,18 +241,33 @@ def admin_confirm_delete_record(bot, call, table_name, record_id):
 
 def admin_execute_delete_record(bot, call, table_name, record_id):
     if not is_admin(call.from_user.id): return
+    if not table_name:
+        bot.answer_callback_query(call.id, "Не указано имя таблицы.")
+        admin_view_db_tables(bot, call)
+        return
 
-    # Узнаём имя первичного ключа
-    cols = db_execute(f"PRAGMA table_info({table_name})", fetch_all=True)
+    # Проверим, есть ли такая таблица в БД
+    exists = db_execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table_name,), fetch_one=True)
+    if not exists:
+        bot.answer_callback_query(call.id, f"Таблица '{table_name}' не найдена.")
+        admin_view_db_tables(bot, call)
+        return
+
+    # Безопасно экранируем идентификаторы (удаляем/экранируем двойные кавычки)
+    safe_table = '"' + table_name.replace('"', '""') + '"'
+
+    # Узнаём имя первичного ключа (через PRAGMA для безопасной таблицы)
+    cols = db_execute(f"PRAGMA table_info({safe_table})", fetch_all=True)
     if not cols:
-        bot.answer_callback_query(call.id, "Не удалось получить информацию о таблице.")
+        bot.answer_callback_query(call.id, "Не удалось получить информацию о таблице (PRAGMA вернуло пусто).")
         admin_view_db_tables(bot, call)
         return
 
     pk_name = cols[0][1]
+    safe_pk = '"' + pk_name.replace('"', '""') + '"'
 
     try:
-        db_execute(f"DELETE FROM {table_name} WHERE {pk_name} = ?", (record_id,), commit=True)
+        db_execute(f"DELETE FROM {safe_table} WHERE {safe_pk} = ?", (record_id,), commit=True)
         bot.answer_callback_query(call.id, f"✅ Запись {record_id} удалена из таблицы {table_name}.")
         # Показать таблицу заново (страница 0)
         admin_view_table_data(bot, call, table_name, 0)
