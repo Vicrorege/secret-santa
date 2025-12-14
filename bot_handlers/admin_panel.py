@@ -406,42 +406,76 @@ def callback_admin_panel(bot, call, user_states):
     elif data == 'admin_tweak_pairs':
         admin_tweak_pairs_select_game(bot, call)
     elif data.startswith('admin_tweak_game_'):
-        parts = data.split('_')
-        game_id = int(parts[3])
+        payload = data[len('admin_tweak_game_'):]
+        try:
+            game_id = int(payload)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверный идентификатор игры.")
+            return
         admin_tweak_pairs_show(bot, call, game_id)
     elif data.startswith('admin_assign_recipient_start_'):
-        parts = data.split('_')
-        game_id, santa_id = int(parts[4]), int(parts[5])
+        payload = data[len('admin_assign_recipient_start_'):]
+        try:
+            game_id_str, santa_id_str = payload.split('_', 1)
+            game_id, santa_id = int(game_id_str), int(santa_id_str)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверные параметры назначения получателя.")
+            return
         admin_assign_recipient_start(bot, call, game_id, santa_id)
     elif data.startswith('admin_assign_recipient_execute_'):
-        parts = data.split('_')
-        game_id, santa_id, recipient_id = int(parts[4]), int(parts[5]), int(parts[6])
+        payload = data[len('admin_assign_recipient_execute_'):]
+        try:
+            parts = payload.split('_')
+            game_id, santa_id, recipient_id = int(parts[0]), int(parts[1]), int(parts[2])
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверные параметры назначения получателя.")
+            return
         admin_assign_recipient_execute(bot, call, game_id, santa_id, recipient_id)
     elif data.startswith('admin_delete_manual_pairs_'):
-        game_id = int(data.split('_')[4])
+        payload = data[len('admin_delete_manual_pairs_'):]
+        try:
+            game_id = int(payload)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверный идентификатор игры.")
+            return
         admin_delete_manual_pairs_action(bot, call, game_id)
     elif data == 'admin_view_db':
         admin_view_db_tables(bot, call)
     elif data.startswith('admin_db_table_'):
-        parts = data.split('_')
-        table_name = parts[3]
-        page = int(parts[4])
+        payload = data[len('admin_db_table_'):]
+        try:
+            table_name, page_str = payload.rsplit('_', 1)
+            page = int(page_str)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверные параметры таблицы.")
+            return
         admin_view_table_data(bot, call, table_name, page)
     elif data.startswith('admin_db_page_'):
-        parts = data.split('_')
-        table_name = parts[3]
-        page = int(parts[4])
+        payload = data[len('admin_db_page_'):]
+        try:
+            table_name, page_str = payload.rsplit('_', 1)
+            page = int(page_str)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверные параметры страницы.")
+            return
         admin_view_table_data(bot, call, table_name, page)
     elif data.startswith('admin_prompt_edit_'):
-        parts = data.split('_')
-        table_name = parts[3]
-        record_id = int(parts[4])
-        col_name = '_'.join(parts[5:]) 
+        payload = data[len('admin_prompt_edit_'):]
+        try:
+            table_name, record_id_str, col_name = payload.rsplit('_', 2)
+            record_id = int(record_id_str)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверные параметры редактирования.")
+            return
         admin_prompt_edit_value(bot, call, table_name, record_id, col_name, user_states)
-    elif data.startswith('admin_edit_record_'): 
-        parts = data.split('_')
-        table_name = parts[3]
-        record_id = int(parts[4])
+    elif data.startswith('admin_edit_record_'):
+        payload = data[len('admin_edit_record_'):]
+        try:
+            table_name, record_id_str = payload.rsplit('_', 1)
+            record_id = int(record_id_str)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверные параметры просмотра записи.")
+            return
         admin_edit_record_view(bot, call, table_name, record_id)
     elif data.startswith('admin_delete_record_'):
         parts = data.split('_')
