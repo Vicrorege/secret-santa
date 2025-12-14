@@ -428,6 +428,17 @@ def callback_admin_panel(bot, call, user_states):
         table_name = parts[3]
         record_id = int(parts[4])
         admin_edit_record_view(bot, call, table_name, record_id)
+    elif data.startswith('admin_delete_record_'):
+        parts = data.split('_')
+        # support table names containing underscores: last part is id
+        record_id = int(parts[-1])
+        table_name = '_'.join(parts[3:-1])
+        admin_confirm_delete_record(bot, call, table_name, record_id)
+    elif data.startswith('admin_execute_delete_record_'):
+        parts = data.split('_')
+        record_id = int(parts[-1])
+        table_name = '_'.join(parts[3:-1])
+        admin_execute_delete_record(bot, call, table_name, record_id)
     else:
         bot.answer_callback_query(call.id, f"Действие '{data}' пока не реализовано.")
 
