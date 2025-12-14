@@ -59,6 +59,7 @@ def organizer_panel(bot, tg_id, game_id, message_id=None):
         markup.add(types.InlineKeyboardButton("🔄 Пережеребьёвка", callback_data=f'draw_{game_id}'))
         markup.add(types.InlineKeyboardButton("🎁 Завершить игру", callback_data=f'finish_game_{game_id}'))
     
+    markup.add(types.InlineKeyboardButton("✏️ Мои пожелания", callback_data=f'wish_game_{game_id}'))
     markup.add(types.InlineKeyboardButton("🗑️️ Удалить игру", callback_data=f'delete_game_{game_id}'))
     markup.add(types.InlineKeyboardButton("⬅️ Назад в Мои игры", callback_data='my_games'))
     
