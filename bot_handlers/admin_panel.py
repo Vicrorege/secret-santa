@@ -1,6 +1,7 @@
 import telebot
 from telebot import types
 import json
+import base64
 from db_manager import db_execute, get_table_data, get_single_record, is_admin, is_fantom, get_game_info
 from bot_handlers.common import get_user_link, get_user_name, escape_html, send
 
@@ -121,10 +122,12 @@ def admin_edit_record_view(bot, call, table_name, record_id):
         text += f"<b>{col_name}:</b> <code>{escaped_value}</code>\n" 
         
         if i > 0:
+            # Кодируем payload в base64(JSON(...)) чтобы безопасно передавать имена полей
+            payload = base64.urlsafe_b64encode(json.dumps([table_name, record[0], col_name]).encode()).decode()
             edit_markup.add(
                 types.InlineKeyboardButton(
                     f"✏️ Изменить поле {col_name}", 
-                    callback_data=f'admin_prompt_edit_{table_name}_{record[0]}_{col_name}'
+                    callback_data=f'admin_prompt_edit_{payload}'
                 )
             )
 
@@ -191,30 +194,26 @@ def handle_admin_edit_input(bot, message, user_states):
             parse_mode='HTML'
         )
         
-        mock_message = types.Message(
-            message_id=context['message_to_edit_id'], 
-            chat=message.chat, 
-            date=message.date, 
-            from_user=message.from_user, 
-            content_type='text', 
-            options=[], 
-            json_string='{}'
-        )
-        
-        mock_call = types.CallbackQuery(
-            id='mock_id', 
-            from_user=message.from_user, 
-            data=f'admin_edit_record_{table_name}_{record_id}', 
-            chat_instance='mock_chat_instance', 
-            message=mock_message,
-            json_string='{}'
-        )
-        
+        # Обновим представление записи — создаём минимальный объект call вместо громоздкого mock'а
+        class _CallObj:
+            pass
+
+        call_obj = _CallObj()
+        call_obj.from_user = message.from_user
+        call_obj.id = f"re_render_{record_id}"
+        call_obj.message = type('M', (), {})()
+        call_obj.message.chat = message.chat
+        call_obj.message.message_id = context.get('message_to_edit_id')
+
         try:
-            admin_edit_record_view(bot, mock_call, table_name, record_id)
+            admin_edit_record_view(bot, call_obj, table_name, record_id)
         except Exception:
-            mock_call.message.message_id = None 
-            admin_edit_record_view(bot, mock_call, table_name, record_id)
+            # В крайнем случае показываем таблицу (страница 0)
+            try:
+                admin_view_table_data(bot, call_obj, table_name, 0)
+            except Exception:
+                # если и это не удалось — просто отправим сообщение подтверждения
+                send(bot, tg_id, f"✅ Поле '{col_name}' обновлено (ID: {record_id}).", parse_mode='HTML')
             
     except Exception as e:
         send(
@@ -462,8 +461,9 @@ def callback_admin_panel(bot, call, user_states):
     elif data.startswith('admin_prompt_edit_'):
         payload = data[len('admin_prompt_edit_'):]
         try:
-            table_name, record_id_str, col_name = payload.rsplit('_', 2)
-            record_id = int(record_id_str)
+            decoded = base64.urlsafe_b64decode(payload.encode()).decode()
+            table_name, record_id, col_name = json.loads(decoded)
+            record_id = int(record_id)
         except Exception:
             bot.answer_callback_query(call.id, "Неверные параметры редактирования.")
             return
