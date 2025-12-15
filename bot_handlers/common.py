@@ -42,11 +42,17 @@ def get_user_name(tg_id):
 def get_user_link(tg_id):
     user = get_user_info(tg_id)
     if user:
-        fulname = user[3]
-        fulname +=" " + user[4] if user[4] is not None else ""
-        name = fulname or f"ID: {user[1]}"
-        return f'<a href="tg://user?id={tg_id}">{name}</a>'
-    return f"Неизвестный пользователь ID:{tg_id}"
+        first = user[3] or ''
+        last = user[4] or ''
+        username = user[2] or ''
+        # Prefer first+last, fall back to username, then to ID
+        full = (first + (' ' + last if last else '')).strip()
+        name = full or username or f"ID: {user[1]}"
+    else:
+        name = f"ID: {tg_id}"
+
+    # Always return an HTML link (escape display name)
+    return f'<a href="tg://user?id={tg_id}">{escape_html(name)}</a>'
 
 def main_menu_markup():
     markup = types.InlineKeyboardMarkup()
