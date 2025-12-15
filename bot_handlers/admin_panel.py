@@ -478,17 +478,22 @@ def callback_admin_panel(bot, call, user_states):
             return
         admin_edit_record_view(bot, call, table_name, record_id)
     elif data.startswith('admin_delete_record_'):
-        parts = data.split('_')
-        # support table names containing underscores: last part is id
-        record_id = int(parts[-1])
-        table_name = '_'.join(parts[3:-1])
-        print(table_name)
+        payload = data[len('admin_delete_record_'):]
+        try:
+            table_name, record_id_str = payload.rsplit('_', 1)
+            record_id = int(record_id_str)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверные параметры удаления записи.")
+            return
         admin_confirm_delete_record(bot, call, table_name, record_id)
     elif data.startswith('admin_execute_delete_record_'):
-        parts = data.split('_')
-        record_id = int(parts[-1])
-        table_name = '_'.join(parts[4:-1])
-        print(table_name)
+        payload = data[len('admin_execute_delete_record_'):]
+        try:
+            table_name, record_id_str = payload.rsplit('_', 1)
+            record_id = int(record_id_str)
+        except Exception:
+            bot.answer_callback_query(call.id, "Неверные параметры удаления записи.")
+            return
         admin_execute_delete_record(bot, call, table_name, record_id)
     else:
         bot.answer_callback_query(call.id, f"Действие '{data}' пока не реализовано.")
